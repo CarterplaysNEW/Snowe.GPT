@@ -7,7 +7,7 @@ window.SNOWE_CONFIG = {
   WORKER_URL: "https://snowe-api.carterplays648.workers.dev",
 
   // Message usage: each person gets MESSAGE_LIMIT messages every WINDOW_HOURS hours.
-  MESSAGE_LIMIT: 25,
+  MESSAGE_LIMIT: 30,
   WINDOW_HOURS: 3,
 
   // When a long answer (like big code) gets cut off, SNOWE keeps going on his own
