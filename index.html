@@ -68,6 +68,14 @@
         </select>
       </div>
       <div class="field">
+        <label for="websearch">Web search</label>
+        <select id="websearch">
+          <option value="auto">On — SNOWE searches when a question needs it</option>
+          <option value="off">Off — answer from memory only (faster)</option>
+        </select>
+        <small>Snowball does a quick search, Snowman and Blizzard check a few sites, Avalanche researches deeply.</small>
+      </div>
+      <div class="field">
         <label>Message usage</label>
         <small id="usageInfo"></small>
       </div>
@@ -101,6 +109,7 @@
       <p><b>SNOWE.GPT</b> ver. 0.5 [BETA]</p>
       <p>SNOWE is a chatbot that is definitely, 100% made of snow. Do not leave it in the sun.</p>
       <p>Ask him to code something and he writes it live in a code box. When he's done you can copy it, download it, or run it (HTML and JavaScript).</p>
+      <p>SNOWE searches the web when a question needs fresh facts, and shows his sources under the answer.</p>
       <p>Be nice to SNOWE to earn SnowCoins, then spend them in the shop on Avalanche, his smartest brain.</p>
       <p>Commands (free, they don't use messages): <code>/help</code> <code>/coins</code> <code>/shop</code> <code>/buy</code> <code>/brain</code></p>
       <p>Shortcuts: <code>/</code> jumps to the textbox, <kbd>Enter</kbd> sends, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a new line. Double-click the big title to rename a chat.</p>
