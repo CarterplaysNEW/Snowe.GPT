@@ -4,7 +4,7 @@
 
 window.SNOWE_CONFIG = {
   // Paste your Cloudflare Worker URL here, e.g. "https://snowe-brain.yourname.workers.dev"
-  WORKER_URL: "",
+  WORKER_URL: "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",
 
   // Message usage: each person gets MESSAGE_LIMIT messages every WINDOW_HOURS hours.
   MESSAGE_LIMIT: 25,
