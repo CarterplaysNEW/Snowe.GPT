@@ -44,6 +44,7 @@
         <div class="meter" id="meter"><i id="meterFill"></i></div>
         <span id="resetText"></span>
         <span class="spacer"></span>
+        <button class="coinbtn" id="coinBtn" title="SnowCoin shop">❄ <b id="coinCount">0</b> SnowCoins</button>
         <span class="mode" id="modeText">Brain: Snowman</span>
       </div>
     </div>
@@ -77,6 +78,22 @@
   </div>
 </div>
 
+<div class="scrim" id="shopDlg" hidden>
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="shopH">
+    <h2 id="shopH">SnowCoin shop <button data-close aria-label="Close">✕</button></h2>
+    <div class="in">
+      <div class="balance">❄ <b id="shopCoins">0</b> SnowCoins</div>
+      <p class="dim">Be nice to SNOWE and he gives you SnowCoins. Be rude and he takes some back. Begging for coins doesn't work.</p>
+      <div class="item">
+        <div class="item-top"><b id="premName">Avalanche</b><span class="price" id="premPrice">500 ❄</span></div>
+        <p id="premDesc">The smartest SNOWE brain, for 60 minutes.</p>
+        <div class="meter wide"><i id="premFill"></i></div>
+        <button class="btn buy" id="buyBtn">Buy</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="scrim" id="aboutDlg" hidden>
   <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="abH">
     <h2 id="abH">About <button data-close aria-label="Close">✕</button></h2>
@@ -84,6 +101,8 @@
       <p><b>SNOWE.GPT</b> ver. 0.5 [BETA]</p>
       <p>SNOWE is a chatbot that is definitely, 100% made of snow. Do not leave it in the sun.</p>
       <p>Ask him to code something and he writes it live in a code box. When he's done you can copy it, download it, or run it (HTML and JavaScript).</p>
+      <p>Be nice to SNOWE to earn SnowCoins, then spend them in the shop on Avalanche, his smartest brain.</p>
+      <p>Commands (free, they don't use messages): <code>/help</code> <code>/coins</code> <code>/shop</code> <code>/buy</code> <code>/brain</code></p>
       <p>Shortcuts: <code>/</code> jumps to the textbox, <kbd>Enter</kbd> sends, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a new line. Double-click the big title to rename a chat.</p>
       <p class="dim">Chats are saved in your browser only.</p>
     </div>
