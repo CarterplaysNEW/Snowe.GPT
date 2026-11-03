@@ -16,8 +16,8 @@ window.SNOWE_CONFIG = {
 
   // The brains. "model" must also be allowed in worker.js.
   BRAINS: {
-    quick:   { name: "Snowball", model: "llama-3.1-8b-instant",    note: "fast, a bit silly" },
-    default: { name: "Snowman",  model: "llama-3.3-70b-versatile", note: "smart, balanced" },
+    quick:   { name: "Snowball", model: "allam-2-7b",    note: "fast, a bit silly" },
+    default: { name: "Snowman",  model: "qwen/qwen3.8-27b", note: "smart, balanced" },
     complex: { name: "Blizzard", model: "openai/gpt-oss-20b",      note: "best at code and maths, slower" }
   },
   DEFAULT_BRAIN: "default",
