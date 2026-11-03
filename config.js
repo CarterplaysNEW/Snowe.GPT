@@ -4,7 +4,7 @@
 
 window.SNOWE_CONFIG = {
   // Paste your Cloudflare Worker URL here, e.g. "https://snowe-brain.yourname.workers.dev"
-  WORKER_URL: "https://snowe-brain.carterplays648.workers.dev/",
+  WORKER_URL: "https://snowe-brain.yourname.workers.dev",
 
   // Message usage: each person gets MESSAGE_LIMIT messages every WINDOW_HOURS hours.
   MESSAGE_LIMIT: 25,
@@ -20,5 +20,12 @@ window.SNOWE_CONFIG = {
     default: { name: "Snowman",  model: "llama-3.3-70b-versatile", note: "smart, balanced" },
     complex: { name: "Blizzard", model: "openai/gpt-oss-20b",      note: "best at code and maths, slower" }
   },
-  DEFAULT_BRAIN: "default"
+  DEFAULT_BRAIN: "default",
+
+  // The secret best brain. Buy it in the SnowCoin shop. It lasts MINUTES, then melts.
+  // Its model must also be allowed in worker.js.
+  PREMIUM: { key: "avalanche", name: "Avalanche", model: "openai/gpt-oss-120b", note: "the smartest SNOWE", PRICE: 500, MINUTES: 60 },
+
+  // SnowCoins: SNOWE gives you coins when you're nice, and takes some if you're rude.
+  COINS: { START: 0, MAX_GAIN: 50, MAX_LOSS: 20 }
 };
