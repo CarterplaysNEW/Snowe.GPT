@@ -9,7 +9,7 @@ const uid = () => Math.random().toString(36).slice(2,10);
 const WINDOW_MS = CFG.WINDOW_HOURS * 3600e3;
 
 /* ================= state ================= */
-let settings = Object.assign({brain:CFG.DEFAULT_BRAIN, persona:"normal"}, store.get("settings", {}));
+let settings = Object.assign({brain:CFG.DEFAULT_BRAIN, persona:"normal", search:"auto"}, store.get("settings", {}));
 const PREM = CFG.PREMIUM;
 let coins = store.get("coins", CFG.COINS.START);
 const premiumLeft = () => Math.max(0, (settings.premiumUntil || 0) - Date.now());
@@ -84,7 +84,7 @@ function codeBox(lang, code, state){ // state: "live" | "cut" | "done"
 }
 
 const COIN_TAG = /\[\[\s*coins?\s*:\s*([+-]?\d+)\s*\]\]/gi;
-const cleanText = (s, live) => { s = s.replace(COIN_TAG, ""); if (live) s = s.replace(/\[\[[^\]\n]{0,20}\]?$/, ""); return s.trimEnd(); };
+const cleanText = (s, live) => { s = s.replace(/\[\[\s*coins?\s*:[^\]\n]*\]\]/gi, "").replace(/\u3010[^\u3011]*\u3011/g, ""); if (live) s = s.replace(/\[\[[^\]\n]{0,20}\]?$/, ""); return s.trimEnd(); };
 function md(src, live){
   src = cleanText(src, live);
   const out = [];
@@ -130,9 +130,22 @@ function renderList(){
 
 function fillBot(el, m, live){
   const body = el.querySelector(".body");
-  if (live && !m.content) body.innerHTML = `<span class="thinking">${m.thinking ? "SNOWE is thinking hard" : "SNOWE is thinking"}</span>`;
+  const label = m.searching ? (m.searching === "deep" ? "🔎 SNOWE is researching deeply" : "🔎 SNOWE is searching the web")
+    : m.sources?.length ? `SNOWE is reading ${m.sources.length} website${m.sources.length > 1 ? "s" : ""}`
+    : m.thinking ? "SNOWE is thinking hard" : "SNOWE is thinking";
+  if (live && !m.content) body.innerHTML = `<span class="thinking">${label}</span>`;
   else body.innerHTML = md(m.content, live);
   el.querySelectorAll(".err,.cont").forEach(x => x.remove());
+  el.querySelectorAll(".sources").forEach(x => x.remove());
+  if (m.sources?.length){
+    const src = document.createElement("div"); src.className = "sources"; src.append("🔎 Sources: ");
+    m.sources.forEach((u, i) => {
+      let host = u; try{ host = new URL(u).hostname.replace(/^www\./, ""); }catch{}
+      const a = document.createElement("a"); a.href = u; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = host; a.title = u;
+      if (i) src.append(" · "); src.append(a);
+    });
+    el.append(src);
+  }
   if (m.error){ const e = document.createElement("div"); e.className = "err"; e.textContent = m.error; el.append(e); }
   if (m.paused && !live){
     const c = document.createElement("div"); c.className = "cont";
@@ -224,6 +237,9 @@ const PERSONA = {
 };
 const systemPrompt = () => `You are SNOWE, the AI assistant on the website SNOWE.GPT (version 0.5 BETA). The site is a fun joke project, but you try hard to give correct, useful answers, and you say so when you aren't sure. ${PERSONA[settings.persona]}
 Keep answers focused and fairly short unless the user asks for more.
+Today's date is ${new Date().toDateString()}.
+SNOWE has web search: when the conversation includes "Web research notes", they were searched just now, so trust them over your own memory and use them. The website shows the source links under your answer automatically, so mention a site name only when it helps (like "according to the BBC"), and never say that sources are missing. If there are no notes and you're not sure about something recent, say so instead of making it up.
+Never guess anyone's sexual orientation, health or private life. If a famous person has said it publicly, you can share what they said and where. If it's about a private person (a friend, a classmate), kindly say it's theirs to share, without lecturing.
 Format with simple Markdown: paragraphs, **bold**, lists, \`inline code\`.
 When you write code, ALWAYS put it in a fenced code block with the language name, like \`\`\`html or \`\`\`python. For anything that runs in a browser (games, pages, animations), prefer ONE complete HTML file with the CSS and JavaScript inside it, so the user can press Run. After the code, add a short note on how it works or how to use it.
 If asked who made you, say you are SNOWE from SNOWE.GPT.
@@ -306,7 +322,12 @@ async function generate(c, reply, autoLeft){
       return before + space + g;
     };
     try{
-      finish = await stream(messages, ctl.signal, delta => {
+      const search = (!before && settings.search !== "off") ? (brain().search || "normal") : "off";
+      finish = await stream(messages, ctl.signal, search, st => {
+        if (st.status === "searching") reply.searching = st.depth || "normal";
+        else { reply.searching = null; const src = (st.sources || []).filter(u => !/exa\.ai\/search|google\.com\/search|bing\.com\/search/.test(u)); if (src.length) reply.sources = src; }
+        scheduleRender();
+      }, delta => {
         got += delta;
         if (before && got.length < 40 && !got.includes("\n")) return; // wait to see how the continuation starts
         reply.content = join();
@@ -354,11 +375,11 @@ function done(c){
 }
 
 // Streams one answer from the Worker. Returns the finish reason ("stop", "length", ...).
-async function stream(messages, signal, onDelta, onThinking){
+async function stream(messages, signal, search, onStatus, onDelta, onThinking){
   const res = await fetch(CFG.WORKER_URL, {
     method:"POST", signal,
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({model: brain().model, messages})
+    body: JSON.stringify({model: brain().model, messages, search})
   });
   if (!res.ok){
     let msg = `error ${res.status}`;
@@ -378,6 +399,7 @@ async function stream(messages, signal, onDelta, onThinking){
       if (data === "[DONE]") return finish;
       let j; try{ j = JSON.parse(data); }catch{ continue; }
       if (j.error) throw new Error(j.error.message || "stream error");
+      if (j.snowe){ if (j.snowe.error && !j.snowe.status) throw new Error(j.snowe.error); onStatus(j.snowe); continue; }
       const ch = j.choices?.[0]; if (!ch) continue;
       if (ch.delta?.content) onDelta(ch.delta.content);
       else if (ch.delta?.reasoning) onThinking();
@@ -507,9 +529,10 @@ function fillBrains(){
   brainSel.value = settings.brain;
 }
 fillBrains();
-$("openSettings").onclick = () => { checkPremium(); fillBrains(); $("persona").value = settings.persona; renderUsage(); $("settingsDlg").hidden = false; };
+$("openSettings").onclick = () => { checkPremium(); fillBrains(); $("persona").value = settings.persona; $("websearch").value = settings.search; renderUsage(); $("settingsDlg").hidden = false; };
 brainSel.onchange = e => { settings.brain = e.target.value; store.set("settings", settings); renderUsage(); };
 $("persona").onchange = e => { settings.persona = e.target.value; store.set("settings", settings); };
+$("websearch").onchange = e => { settings.search = e.target.value; store.set("settings", settings); };
 let wipeArmed = false;
 $("wipe").onclick = e => {
   if (busy) return toast("Wait for SNOWE to finish first");
