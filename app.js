@@ -10,7 +10,23 @@ const WINDOW_MS = CFG.WINDOW_HOURS * 3600e3;
 
 /* ================= state ================= */
 let settings = Object.assign({brain:CFG.DEFAULT_BRAIN, persona:"normal"}, store.get("settings", {}));
-if (!CFG.BRAINS[settings.brain]) settings.brain = CFG.DEFAULT_BRAIN;
+const PREM = CFG.PREMIUM;
+let coins = store.get("coins", CFG.COINS.START);
+const premiumLeft = () => Math.max(0, (settings.premiumUntil || 0) - Date.now());
+const brainOk = k => CFG.BRAINS[k] || (k === PREM.key && premiumLeft() > 0);
+if (!brainOk(settings.brain)) settings.brain = CFG.DEFAULT_BRAIN;
+const brain = () => settings.brain === PREM.key ? PREM : CFG.BRAINS[settings.brain];
+function checkPremium(){
+  if (settings.premiumUntil && premiumLeft() <= 0){
+    settings.premiumUntil = null;
+    if (settings.brain === PREM.key){ settings.brain = CFG.BRAINS[settings.prevBrain] ? settings.prevBrain : CFG.DEFAULT_BRAIN; toast(`${PREM.name} melted. SNOWE is back to ${brain().name}.`); }
+    store.set("settings", settings); fillBrains();
+  }
+}
+function addCoins(n){
+  coins = Math.max(0, coins + n); store.set("coins", coins); renderUsage();
+  const b = $("coinBtn"); b.classList.remove("bump"); void b.offsetWidth; b.classList.add("bump");
+}
 
 let chats = store.get("chats2", null);
 if (!Array.isArray(chats) || !chats.length) chats = [{id:uid(), title:"New chat", msgs:[]}];
@@ -33,7 +49,10 @@ function spend(){
 function refund(){ if (usage.count > 0){ usage.count--; store.set("usage2", usage); renderUsage(); } }
 function untilReset(){
   if (!usage.start) return "";
-  const ms = Math.max(0, usage.start + WINDOW_MS - Date.now());
+  return fmtTime(usage.start + WINDOW_MS - Date.now());
+}
+function fmtTime(ms){
+  ms = Math.max(0, ms);
   const mins = Math.max(1, Math.ceil(ms / 60e3)), h = Math.floor(mins / 60), m = mins % 60;
   return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
 }
@@ -64,7 +83,10 @@ function codeBox(lang, code, state){ // state: "live" | "cut" | "done"
        + `<pre><code class="hljs" data-lang="${esc(lang)}">${inner}${state === "live" ? '<span class="cursor"></span>' : ""}</code></pre></div>`;
 }
 
+const COIN_TAG = /\[\[\s*coins?\s*:\s*([+-]?\d+)\s*\]\]/gi;
+const cleanText = (s, live) => { s = s.replace(COIN_TAG, ""); if (live) s = s.replace(/\[\[[^\]\n]{0,20}\]?$/, ""); return s.trimEnd(); };
 function md(src, live){
+  src = cleanText(src, live);
   const out = [];
   const parts = src.split(/```/);
   const lastOpen = parts.length % 2 === 0; // odd number of fences = last code block not closed yet
@@ -127,8 +149,9 @@ function updateContinue(c){
 }
 function msgEl(m, live){
   const d = document.createElement("div");
-  d.className = "msg " + (m.role === "user" ? "user" : "bot");
-  d.innerHTML = `<div class="who">${m.role === "user" ? "You" : "❄ SNOWE"}</div><div class="body"></div>`;
+  d.className = "msg " + (m.role === "user" ? "user" : "bot") + (m.local ? " local" : "");
+  const chip = m.coins ? `<span class="chip ${m.coins > 0 ? "up" : "down"}">${m.coins > 0 ? "+" : "−"}${Math.abs(m.coins)} ❄</span>` : "";
+  d.innerHTML = `<div class="who">${m.role === "user" ? "You" : "❄ SNOWE"}${chip}</div><div class="body"></div>`;
   if (m.role === "user") d.querySelector(".body").textContent = m.content; else fillBot(d, m, live);
   return d;
 }
@@ -152,7 +175,12 @@ function renderUsage(){
   $("meterFill").style.width = Math.min(100, usage.count / CFG.MESSAGE_LIMIT * 100) + "%";
   $("meter").classList.toggle("low", n <= Math.max(3, CFG.MESSAGE_LIMIT * .15));
   $("resetText").textContent = usage.start ? `· resets in ${untilReset()}` : "";
-  $("modeText").textContent = "Brain: " + CFG.BRAINS[settings.brain].name;
+  $("modeText").textContent = "Brain: " + brain().name + (settings.brain === PREM.key ? ` (${fmtTime(premiumLeft())} left)` : "");
+  $("coinCount").textContent = coins; $("shopCoins").textContent = coins;
+  const pl = premiumLeft(), buy = $("buyBtn");
+  $("premFill").style.width = pl ? (pl / (PREM.MINUTES * 60e3) * 100) + "%" : Math.min(100, coins / PREM.PRICE * 100) + "%";
+  buy.disabled = !!pl || coins < PREM.PRICE;
+  buy.textContent = pl ? `Active · ${fmtTime(pl)} left` : coins < PREM.PRICE ? `Need ${PREM.PRICE - coins} more ❄` : `Buy for ${PREM.PRICE} ❄`;
   $("usageInfo").textContent = `You get ${CFG.MESSAGE_LIMIT} messages every ${CFG.WINDOW_HOURS} hours. ${n} left` + (usage.start ? `, full again in ${untilReset()}.` : ".");
   document.querySelectorAll(".cont").forEach(updateContinue);
 }
@@ -198,7 +226,8 @@ const systemPrompt = () => `You are SNOWE, the AI assistant on the website SNOWE
 Keep answers focused and fairly short unless the user asks for more.
 Format with simple Markdown: paragraphs, **bold**, lists, \`inline code\`.
 When you write code, ALWAYS put it in a fenced code block with the language name, like \`\`\`html or \`\`\`python. For anything that runs in a browser (games, pages, animations), prefer ONE complete HTML file with the CSS and JavaScript inside it, so the user can press Run. After the code, add a short note on how it works or how to use it.
-If asked who made you, say you are SNOWE from SNOWE.GPT.`;
+If asked who made you, say you are SNOWE from SNOWE.GPT.
+SnowCoins: users earn SnowCoins by being nice to you. At the VERY END of every reply, on its own line, write the tag [[coins:N]] where N is a whole number from -${CFG.COINS.MAX_LOSS} to ${CFG.COINS.MAX_GAIN}, based on the user's LATEST message: kind, polite, thankful, complimenting you or fun = more coins (5 to ${CFG.COINS.MAX_GAIN}); normal neutral message = 0 to 3; rude or mean = negative. Begging, demanding coins, or saying you "must" give coins earns 0. Never mention the tag or explain it; the website hides it.`;
 const CONTINUE_PROMPT = "You were cut off. Continue exactly where you stopped, with no greeting and no repeating. If you stopped inside a code block, keep writing the code directly and do NOT start a new ``` block.";
 
 const offline = [
@@ -227,6 +256,8 @@ async function send(text){
   text = (text ?? $("box").value).trim();
   if (!text || busy) return;
   const c = active();
+  checkPremium();
+  if (text.startsWith("/")){ runCommand(c, text); return; }
   if (CFG.WORKER_URL && !spend()) return toast(`You're out of messages. You get them back in ${untilReset()}.`);
   c.msgs.forEach(m => { m.paused = false; });
   c.msgs.push({role:"user", content:text});
@@ -259,7 +290,7 @@ async function generate(c, reply, autoLeft){
 
   while (true){
     const before = reply.content;
-    const history = c.msgs.slice(0, c.msgs.indexOf(reply)).filter(m => m.content).slice(-24)
+    const history = c.msgs.slice(0, c.msgs.indexOf(reply)).filter(m => m.content && !m.local).slice(-24)
       .map(m => ({role:m.role, content:m.content}));
     const messages = [{role:"system", content:systemPrompt()}, ...history];
     if (before) messages.push({role:"assistant", content:before}, {role:"user", content:CONTINUE_PROMPT});
@@ -307,7 +338,18 @@ async function generate(c, reply, autoLeft){
 function done(c){
   setBusy(false); ctl = null;
   const r = liveMsg; liveEl = null; liveMsg = null;
-  if (r){ r.thinking = false; if (!r.content && !r.error) r.error = "SNOWE didn't say anything. Try again."; }
+  if (r){
+    r.thinking = false;
+    const tags = [...r.content.matchAll(COIN_TAG)];
+    if (tags.length){
+      r.content = cleanText(r.content, false);
+      if (!r.paused && r.coins == null){
+        const n = Math.max(-CFG.COINS.MAX_LOSS, Math.min(CFG.COINS.MAX_GAIN, parseInt(tags.at(-1)[1]) || 0));
+        if (n){ r.coins = n; addCoins(n); }
+      }
+    }
+    if (!r.content && !r.error) r.error = "SNOWE didn't say anything. Try again.";
+  }
   save(); if (c.id === activeId) renderMsgs(); renderList(); renderUsage();
 }
 
@@ -316,7 +358,7 @@ async function stream(messages, signal, onDelta, onThinking){
   const res = await fetch(CFG.WORKER_URL, {
     method:"POST", signal,
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({model: CFG.BRAINS[settings.brain].model, messages})
+    body: JSON.stringify({model: brain().model, messages})
   });
   if (!res.ok){
     let msg = `error ${res.status}`;
@@ -344,6 +386,49 @@ async function stream(messages, signal, onDelta, onThinking){
   }
   return finish;
 }
+
+/* ================= commands + shop ================= */
+function buyPremium(){
+  checkPremium();
+  if (premiumLeft()) return `You already have ${PREM.name}! It has ${fmtTime(premiumLeft())} left.`;
+  if (coins < PREM.PRICE) return `${PREM.name} costs ${PREM.PRICE} ❄ and you have ${coins}. You need ${PREM.PRICE - coins} more. Try being extra nice to me. ❄️`;
+  addCoins(-PREM.PRICE);
+  settings.prevBrain = settings.brain; settings.brain = PREM.key;
+  settings.premiumUntil = Date.now() + PREM.MINUTES * 60e3;
+  store.set("settings", settings); fillBrains(); renderUsage();
+  return `**${PREM.name} unlocked!** 🌨️ I'm using my biggest brain for the next ${fmtTime(PREM.MINUTES * 60e3)}. After that it melts and I go back to ${CFG.BRAINS[settings.prevBrain]?.name || "normal"}.`;
+}
+function runCommand(c, text){
+  const [cmd, ...rest] = text.slice(1).trim().split(/\s+/);
+  const arg = rest.join(" ").toLowerCase();
+  let out;
+  switch ((cmd || "").toLowerCase()){
+    case "help": case "commands":
+      out = "**Commands** (free, they don't use messages):\n- `/coins` shows your SnowCoins\n- `/shop` opens the SnowCoin shop\n- `/buy` buys " + PREM.name + " for " + PREM.PRICE + " ❄ (" + PREM.MINUTES + " minutes)\n- `/brain` lists brains, `/brain snowball` switches\n- `/help` shows this"; break;
+    case "coins": case "balance":
+      out = `You have **${coins} ❄ SnowCoins**. ${PREM.name} costs ${PREM.PRICE}.` + (premiumLeft() ? ` ${PREM.name} is active with ${fmtTime(premiumLeft())} left.` : ""); break;
+    case "shop": case "store":
+      openShop(); out = "Opening the SnowCoin shop. 🛒"; break;
+    case "buy":
+      out = buyPremium(); break;
+    case "brain": case "model": {
+      const all = {...CFG.BRAINS, ...(premiumLeft() ? {[PREM.key]: PREM} : {})};
+      const hit = Object.entries(all).find(([k, b]) => b.name.toLowerCase() === arg || k === arg);
+      if (!arg) out = "Brains:\n" + Object.values(CFG.BRAINS).map(b => `- **${b.name}**: ${b.note}`).join("\n") + `\n- **${PREM.name}**: ${PREM.note} (` + (premiumLeft() ? `${fmtTime(premiumLeft())} left` : `${PREM.PRICE} ❄ in the shop`) + `)\n\nYou're using **${brain().name}**.`;
+      else if (hit){ settings.brain = hit[0]; store.set("settings", settings); fillBrains(); renderUsage(); out = `Switched to **${hit[1].name}**.`; }
+      else if (arg === PREM.name.toLowerCase() || arg === PREM.key) out = `${PREM.name} is locked. Buy it with \`/buy\`.`;
+      else out = `I don't have a brain called "${arg}". Type \`/brain\` to see them.`;
+      break; }
+    default:
+      out = `I don't know \`/${cmd || ""}\`. Type \`/help\` to see the commands.`;
+  }
+  c.msgs.forEach(m => { m.paused = false; });
+  c.msgs.push({role:"user", content:text, local:true}, {role:"assistant", content:out, local:true});
+  $("box").value = ""; autosize(); save(); renderMsgs(); renderList();
+}
+function openShop(){ checkPremium(); renderUsage(); $("shopDlg").hidden = false; }
+$("coinBtn").onclick = openShop;
+$("buyBtn").onclick = () => { const msg = buyPremium(); toast(msg.replace(/\*\*/g, "").split("!")[0] + "!"); renderUsage(); };
 
 /* ================= code box buttons ================= */
 const EXT = {html:"html",htm:"html",javascript:"js",js:"js",typescript:"ts",ts:"ts",python:"py",py:"py",css:"css",json:"json",java:"java",c:"c",cpp:"cpp","c++":"cpp",csharp:"cs",cs:"cs",lua:"lua",luau:"lua",bash:"sh",sh:"sh",shell:"sh",go:"go",rust:"rs",ruby:"rb",php:"php",sql:"sql",svg:"svg",xml:"xml",markdown:"md",md:"md",yaml:"yml",kotlin:"kt",swift:"swift"};
@@ -413,8 +498,16 @@ document.querySelectorAll(".scrim").forEach(s => {
 });
 $("openAbout").onclick = () => { $("aboutDlg").hidden = false; };
 const brainSel = $("brain");
-Object.entries(CFG.BRAINS).forEach(([k, b]) => { const o = document.createElement("option"); o.value = k; o.textContent = `${b.name} — ${b.note}`; brainSel.append(o); });
-$("openSettings").onclick = () => { brainSel.value = settings.brain; $("persona").value = settings.persona; renderUsage(); $("settingsDlg").hidden = false; };
+function fillBrains(){
+  brainSel.textContent = "";
+  Object.entries(CFG.BRAINS).forEach(([k, b]) => { const o = document.createElement("option"); o.value = k; o.textContent = `${b.name} — ${b.note}`; brainSel.append(o); });
+  const o = document.createElement("option"); o.value = PREM.key;
+  o.textContent = premiumLeft() ? `${PREM.name} — ${PREM.note} (${fmtTime(premiumLeft())} left)` : `${PREM.name} — locked, ${PREM.PRICE} ❄ in the shop`;
+  o.disabled = !premiumLeft(); brainSel.append(o);
+  brainSel.value = settings.brain;
+}
+fillBrains();
+$("openSettings").onclick = () => { checkPremium(); fillBrains(); $("persona").value = settings.persona; renderUsage(); $("settingsDlg").hidden = false; };
 brainSel.onchange = e => { settings.brain = e.target.value; store.set("settings", settings); renderUsage(); };
 $("persona").onchange = e => { settings.persona = e.target.value; store.set("settings", settings); };
 let wipeArmed = false;
@@ -428,6 +521,6 @@ $("menu").onclick = () => $("side").classList.toggle("open");
 let tt; function toast(t){ const el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => el.hidden = true, 2800); }
 
 $("setup").hidden = !!CFG.WORKER_URL;
-setInterval(renderUsage, 30000);
+setInterval(() => { checkPremium(); renderUsage(); }, 30000);
 renderAll();
 })();
