@@ -29,3 +29,4 @@ window.SNOWE_CONFIG = {
   // SnowCoins: SNOWE gives you coins when you're nice, and takes some if you're rude.
   COINS: { START: 0, MAX_GAIN: 50, MAX_LOSS: 20 }
 };
+
