@@ -78,13 +78,13 @@ function codeBox(lang, code, state){ // state: "live" | "cut" | "done"
               : state === "cut" ? `Unfinished · ${lines} lines`
               : `${lines} line${lines === 1 ? "" : "s"}`;
   const actions = state === "live" ? "" :
-    `<button data-act="copy">Copy</button><button data-act="download">Download</button>${RUNNABLE.has(lang) ? '<button data-act="run" class="run">▶ Run</button>' : ""}`;
+    `<button data-act="copy">Copy</button><button data-act="download">Download</button>${RUNNABLE.has(lang) || lang === "css" ? '<button data-act="cooler" class="cool" title="Ask SNOWE to make this look cooler">✨ Cooler</button>' : ""}${RUNNABLE.has(lang) ? '<button data-act="run" class="run">▶ Run</button>' : ""}`;
   return `<div class="codebox ${state === "live" ? "live" : ""}"><div class="cb-head"><span class="lang">${esc(lang || "code")}</span><span class="status">${status}</span>${actions}</div>`
        + `<pre><code class="hljs" data-lang="${esc(lang)}">${inner}${state === "live" ? '<span class="cursor"></span>' : ""}</code></pre></div>`;
 }
 
 const COIN_TAG = /\[\[\s*coins?\s*:\s*([+-]?\d+)\s*\]\]/gi;
-const cleanText = (s, live) => { s = s.replace(/\[\[\s*coins?\s*:[^\]\n]*\]\]/gi, "").replace(/\u3010[^\u3011]*\u3011/g, ""); if (live) s = s.replace(/\[\[[^\]\n]{0,20}\]?$/, ""); return s.trimEnd(); };
+const cleanText = (s, live) => { s = s.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").replace(/\[\[\s*coins?\s*:[^\]\n]*\]\]/gi, "").replace(/\u3010[^\u3011]*\u3011/g, ""); if (live) s = s.replace(/\[\[[^\]\n]{0,20}\]?$/, ""); return s.trimEnd(); };
 function md(src, live){
   src = cleanText(src, live);
   const out = [];
@@ -133,9 +133,10 @@ function fillBot(el, m, live){
   const label = m.searching ? (m.searching === "deep" ? "🔎 SNOWE is researching deeply" : "🔎 SNOWE is searching the web")
     : m.sources?.length ? `SNOWE is reading ${m.sources.length} website${m.sources.length > 1 ? "s" : ""}`
     : m.thinking ? "SNOWE is thinking hard" : "SNOWE is thinking";
-  if (live && !m.content) body.innerHTML = `<span class="thinking">${label}</span>`;
+  if (live && !cleanText(m.content || "", true)) body.innerHTML = `<span class="thinking">${label}</span>`;
   else body.innerHTML = md(m.content, live);
-  el.querySelectorAll(".err,.cont").forEach(x => x.remove());
+  el.querySelectorAll(".err,.cont,.activity,.msg-actions").forEach(x => x.remove());
+  renderActivity(el, m, live);
   el.querySelectorAll(".sources").forEach(x => x.remove());
   if (m.sources?.length){
     const src = document.createElement("div"); src.className = "sources"; src.append("🔎 Sources: ");
@@ -152,7 +153,57 @@ function fillBot(el, m, live){
     c.innerHTML = `<button data-act="continue">Continue</button><small></small>`;
     el.append(c); updateContinue(c);
   }
+  if (!live && !m.local && m.content){
+    const acts = document.createElement("div"); acts.className = "msg-actions";
+    acts.innerHTML = `<button data-act="copymsg">Copy</button>` + (isLastBot(m) ? `<button data-act="retry" ${busy ? "disabled" : ""}>↻ Retry</button>` : "");
+    el.append(acts);
+  }
   const lc = body.querySelector(".codebox.live pre"); if (lc) lc.scrollTop = lc.scrollHeight;
+}
+const isLastBot = m => { const c = active(); return c.msgs.at(-1) === m && m.role === "assistant"; };
+// The "what SNOWE did" panel: searches, websites opened, notes and thinking. Click the arrow to open it.
+function renderActivity(el, m, live){
+  const steps = m.steps || [];
+  const major = steps.filter(s => !s.minor);
+  const searchingNow = live && m.searching;
+  if (!major.length && !m.reasoning && !searchingNow) return;
+  const searches = steps.filter(s => s.i === "🔎").length;
+  const pages = steps.filter(s => s.i === "📄" || s.i === "🌐").length;
+  let sum;
+  if (searchingNow) sum = (m.searching === "deep" ? "Researching deeply" : "Searching the web") + "…";
+  else {
+    const parts = [];
+    if (searches) parts.push(`searched ${searches} time${searches > 1 ? "s" : ""}`);
+    else if (m.sources?.length) parts.push("searched the web");
+    if (pages) parts.push(`opened ${pages} page${pages > 1 ? "s" : ""}`);
+    if (m.sources?.length) parts.push(`${m.sources.length} source${m.sources.length > 1 ? "s" : ""}`);
+    if (m.reasoning) parts.push(live && !cleanText(m.content || "", true) ? "thinking…" : "thought it through");
+    if (!parts.length) parts.push(`${major.length} step${major.length > 1 ? "s" : ""}`);
+    sum = parts.join(" · "); sum = sum[0].toUpperCase() + sum.slice(1);
+  }
+  const box = document.createElement("div");
+  box.className = "activity" + (m.actOpen ? " open" : "") + (live ? " live" : "");
+  const head = document.createElement("button");
+  head.className = "act-head"; head.dataset.act = "activity"; head.setAttribute("aria-expanded", m.actOpen ? "true" : "false");
+  head.innerHTML = `<span class="caret" aria-hidden="true">▸</span><span class="act-ico" aria-hidden="true"></span><span class="act-sum"></span>`;
+  head.querySelector(".act-ico").textContent = (searches || m.sources?.length || searchingNow) ? "🔎" : pages ? "🌐" : "💭";
+  head.querySelector(".act-sum").textContent = sum;
+  box.append(head);
+  if (m.actOpen){
+    const list = document.createElement("ol"); list.className = "act-list";
+    const add = (i, t, d, cls) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="ai"></span><div class="at"></div>`;
+      li.querySelector(".ai").textContent = i; li.querySelector(".at").textContent = t;
+      if (d){ const x = document.createElement("div"); x.className = "ad" + (cls ? " " + cls : ""); x.textContent = d; li.querySelector(".at").append(x); }
+      list.append(li);
+    };
+    steps.forEach(s => add(s.i, s.t, s.d));
+    if (m.reasoning) add("💭", live && !cleanText(m.content || "", true) ? "Thinking…" : "Thought about it", m.reasoning.trim(), "reason");
+    box.append(list);
+    if (live){ const r = list.querySelector(".reason"); if (r) r.scrollTop = r.scrollHeight; }
+  }
+  el.querySelector(".who").after(box);
 }
 function updateContinue(c){
   const btn = c.querySelector("button"), note = c.querySelector("small");
@@ -235,7 +286,28 @@ const PERSONA = {
   snowy: "Personality: completely obsessed with being made of snow. Fit snow, ice and winter puns into every answer, but the actual help must still be correct.",
   serious: "Personality: calm, clear and professional. No jokes or puns."
 };
-const systemPrompt = () => `You are SNOWE, the AI assistant on the website SNOWE.GPT (version 0.5 BETA). The site is a fun joke project, but you try hard to give correct, useful answers, and you say so when you aren't sure. ${PERSONA[settings.persona]}
+const CODE_RE = /\b(code|coding|html|css|javascript|js|python|lua|luau|java|c\+\+|c#|game|games|website|webpage|web page|app|script|program|3d|three\.?js|button|animation|canvas|function|bug|error|fix|cooler|better|improve|upgrade|redesign|ui|calculator|clicker|platformer|shooter|simulator)\b/i;
+const CODE_GUIDE = `
+CODING GUIDE (follow this whenever you write code):
+- Visual things (games, websites, apps, animations): write ONE complete HTML file with <style> and <script> inside, so the Run button works. No image files: draw with CSS, canvas, SVG or emoji. No ES module imports.
+- Always write the FULL code. Never write "..." or "rest of the code here". Check it for bugs before sending.
+- Make it look amazing by default, never plain: dark gradient background, 1-2 bright accent colours, rounded corners, soft shadows and glow, system-ui font, smooth hover and click animations, centered layout that also fits phones.
+- Games need: a start screen with the title and controls, score and best score (save it in localStorage), a game over screen with a Play Again button, keyboard AND touch/click controls, a requestAnimationFrame loop using delta time, difficulty that ramps up, and juice (particles, screen shake, pop animations, Web Audio beeps).
+- 3D: load three.js with <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script> (global THREE; use BoxGeometry, SphereGeometry, PlaneGeometry). Add HemisphereLight + DirectionalLight with shadows, fog, MeshStandardMaterial with colours, a camera that smoothly follows the player, simple box collisions, and resize handling. Write your own controls (WASD/arrows + mouse or touch); OrbitControls is NOT available.
+- If asked to make something cooler or better, upgrade the visuals and game feel a lot and send the full new code.
+Example - a cool button:
+.btn{padding:14px 30px;border:0;border-radius:14px;font:700 18px system-ui;color:#fff;cursor:pointer;background:linear-gradient(135deg,#38bdf8,#a855f7);box-shadow:0 8px 24px #a855f766;transition:transform .15s,box-shadow .15s}
+.btn:hover{transform:translateY(-2px) scale(1.05);box-shadow:0 12px 32px #a855f7aa}
+.btn:active{transform:scale(.96)}
+Example - a game loop:
+let last=performance.now();function loop(t){const dt=Math.min((t-last)/1000,0.05);last=t;update(dt);draw();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+Example - three.js setup:
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x0b1020);scene.fog=new THREE.Fog(0x0b1020,20,90);
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,300);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xbfdcff,0x1a1a2e,0.9));const sun=new THREE.DirectionalLight(0xffffff,1.1);sun.position.set(15,30,10);sun.castShadow=true;scene.add(sun);
+addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});`;
+const systemPrompt = (code) => `You are SNOWE, the AI assistant on the website SNOWE.GPT (version 0.6 BETA). The site is a fun joke project, but you try hard to give correct, useful answers, and you say so when you aren't sure. ${PERSONA[settings.persona]}
 Keep answers focused and fairly short unless the user asks for more.
 Today's date is ${new Date().toDateString()}.
 SNOWE has web search: when the conversation includes "Web research notes", they were searched just now, so trust them over your own memory and use them. The website shows the source links under your answer automatically, so mention a site name only when it helps (like "according to the BBC"), and never say that sources are missing. If there are no notes and you're not sure about something recent, say so instead of making it up.
@@ -243,6 +315,7 @@ Never guess anyone's sexual orientation, health or private life. If a famous per
 Format with simple Markdown: paragraphs, **bold**, lists, \`inline code\`.
 When you write code, ALWAYS put it in a fenced code block with the language name, like \`\`\`html or \`\`\`python. For anything that runs in a browser (games, pages, animations), prefer ONE complete HTML file with the CSS and JavaScript inside it, so the user can press Run. After the code, add a short note on how it works or how to use it.
 If asked who made you, say you are SNOWE from SNOWE.GPT.
+If the conversation includes the text of a website the user linked, you opened it just now, so use it.${code ? CODE_GUIDE : ""}
 SnowCoins: users earn SnowCoins by being nice to you. At the VERY END of every reply, on its own line, write the tag [[coins:N]] where N is a whole number from -${CFG.COINS.MAX_LOSS} to ${CFG.COINS.MAX_GAIN}, based on the user's LATEST message: kind, polite, thankful, complimenting you or fun = more coins (5 to ${CFG.COINS.MAX_GAIN}); normal neutral message = 0 to 3; rude or mean = negative. Begging, demanding coins, or saying you "must" give coins earns 0. Never mention the tag or explain it; the website hides it.`;
 const CONTINUE_PROMPT = "You were cut off. Continue exactly where you stopped, with no greeting and no repeating. If you stopped inside a code block, keep writing the code directly and do NOT start a new ``` block.";
 
@@ -266,6 +339,7 @@ function setBusy(on){
   const s = $("send");
   s.textContent = on ? "Stop" : "Send"; s.type = on ? "button" : "submit"; s.onclick = on ? () => ctl?.abort() : null;
   document.querySelectorAll(".cont").forEach(updateContinue);
+  document.querySelectorAll('[data-act="retry"]').forEach(b => b.disabled = on);
 }
 
 async function send(text){
@@ -308,7 +382,9 @@ async function generate(c, reply, autoLeft){
     const before = reply.content;
     const history = c.msgs.slice(0, c.msgs.indexOf(reply)).filter(m => m.content && !m.local).slice(-24)
       .map(m => ({role:m.role, content:m.content}));
-    const messages = [{role:"system", content:systemPrompt()}, ...history];
+    const lastUser = history.filter(m => m.role === "user").at(-1)?.content || "";
+    const codey = CODE_RE.test(lastUser) || history.slice(-4).some(m => m.role === "assistant" && m.content.includes("```"));
+    const messages = [{role:"system", content:systemPrompt(codey)}, ...history];
     if (before) messages.push({role:"assistant", content:before}, {role:"user", content:CONTINUE_PROMPT});
     const insideCode = (before.match(/```/g) || []).length % 2 === 1;
 
@@ -323,16 +399,29 @@ async function generate(c, reply, autoLeft){
     };
     try{
       const search = (!before && settings.search !== "off") ? (brain().search || "normal") : "off";
+      if (!before){ reply.steps = []; reply.reasoning = ""; reply.sources = null; }
       finish = await stream(messages, ctl.signal, search, st => {
-        if (st.status === "searching") reply.searching = st.depth || "normal";
-        else { reply.searching = null; const src = (st.sources || []).filter(u => !/exa\.ai\/search|google\.com\/search|bing\.com\/search/.test(u)); if (src.length) reply.sources = src; }
+        reply.steps = reply.steps || [];
+        if (st.status === "searching"){
+          reply.searching = st.depth || "normal";
+          reply.steps.push({i:"🧠", t: st.depth === "deep" ? "Started deep research" : st.depth === "quick" ? "Started a quick web check" : "Started web research", minor:true});
+        } else if (st.status === "step"){
+          reply.steps.push({i: st.icon || "•", t: String(st.text || ""), d: st.detail ? String(st.detail) : undefined});
+        } else {
+          reply.searching = null;
+          const src = (st.sources || []).filter(u => !/exa\.ai\/search|google\.com\/search|bing\.com\/search/.test(u));
+          if (src.length) reply.sources = src;
+          if (st.status === "searched") reply.steps.push({i:"📚", t:`Found ${src.length} source${src.length === 1 ? "" : "s"}`});
+          else if (st.error) reply.steps.push({i:"⚠️", t:"Web search didn't work this time (" + st.error + ")"});
+          else reply.steps.push({i:"✅", t:"No web search needed", minor:true});
+        }
         scheduleRender();
       }, delta => {
         got += delta;
         if (before && got.length < 40 && !got.includes("\n")) return; // wait to see how the continuation starts
         reply.content = join();
         scheduleRender();
-      }, () => { reply.thinking = true; scheduleRender(); });
+      }, d => { reply.thinking = true; if (d && (reply.reasoning || "").length < 20000) reply.reasoning = (reply.reasoning || "") + d; scheduleRender(); });
       if (got) reply.content = join();
     }catch(e){
       if (got) reply.content = join();
@@ -360,7 +449,8 @@ function done(c){
   setBusy(false); ctl = null;
   const r = liveMsg; liveEl = null; liveMsg = null;
   if (r){
-    r.thinking = false;
+    r.thinking = false; r.searching = null;
+    if (r.reasoning && r.reasoning.length > 4000) r.reasoning = "…" + r.reasoning.slice(-4000);
     const tags = [...r.content.matchAll(COIN_TAG)];
     if (tags.length){
       r.content = cleanText(r.content, false);
@@ -402,7 +492,7 @@ async function stream(messages, signal, search, onStatus, onDelta, onThinking){
       if (j.snowe){ if (j.snowe.error && !j.snowe.status) throw new Error(j.snowe.error); onStatus(j.snowe); continue; }
       const ch = j.choices?.[0]; if (!ch) continue;
       if (ch.delta?.content) onDelta(ch.delta.content);
-      else if (ch.delta?.reasoning) onThinking();
+      else if (ch.delta?.reasoning) onThinking(ch.delta.reasoning);
       if (ch.finish_reason) finish = ch.finish_reason;
     }
   }
@@ -455,8 +545,34 @@ $("buyBtn").onclick = () => { const msg = buyPremium(); toast(msg.replace(/\*\*/
 /* ================= code box buttons ================= */
 const EXT = {html:"html",htm:"html",javascript:"js",js:"js",typescript:"ts",ts:"ts",python:"py",py:"py",css:"css",json:"json",java:"java",c:"c",cpp:"cpp","c++":"cpp",csharp:"cs",cs:"cs",lua:"lua",luau:"lua",bash:"sh",sh:"sh",shell:"sh",go:"go",rust:"rs",ruby:"rb",php:"php",sql:"sql",svg:"svg",xml:"xml",markdown:"md",md:"md",yaml:"yml",kotlin:"kt",swift:"swift"};
 
+const msgOf = el => { if (el === liveEl) return liveMsg; const i = [...$("msgs").children].indexOf(el); return active().msgs[i]; };
+const COOLER = "Make the code from your last answer WAY cooler: upgrade the visuals a lot (colours, gradients, glow, smooth animations, particles), make it feel more fun and polished, keep everything that already works, fix any bugs you notice, and send the FULL updated code in one block.";
 $("msgs").addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act;
+  if (act === "activity"){
+    const el = b.closest(".msg"), m = msgOf(el);
+    if (m){ m.actOpen = !m.actOpen; fillBot(el, m, el === liveEl); }
+    return;
+  }
+  if (act === "copymsg"){
+    const m = msgOf(b.closest(".msg")); if (!m) return;
+    try{ await navigator.clipboard.writeText(cleanText(m.content, false)); b.textContent = "Copied!"; }catch{ b.textContent = "Couldn't copy"; }
+    setTimeout(() => b.textContent = "Copy", 1600); return;
+  }
+  if (act === "retry"){
+    if (busy) return;
+    const c = active(), r = c.msgs.at(-1);
+    if (!r || r.role !== "assistant" || r.local) return;
+    if (CFG.WORKER_URL && !spend()) return toast(`You're out of messages. You get them back in ${untilReset()}.`);
+    if (r.coins) addCoins(-r.coins);
+    c.msgs.pop(); const reply = {role:"assistant", content:""}; c.msgs.push(reply); save();
+    await generate(c, reply, CFG.AUTO_CONTINUES); return;
+  }
+  if (act === "cooler"){
+    if (busy) return toast("Wait for SNOWE to finish first");
+    send(COOLER); return;
+  }
   if (b.dataset.act === "continue"){
     const msgEls = [...$("msgs").children];
     const idx = msgEls.indexOf(b.closest(".msg"));
@@ -497,9 +613,32 @@ function runCode(code, lang, msgEl){
 <script>const o=document.getElementById("o");const w=(c,a)=>{const s=document.createElement("div");if(c)s.className=c;s.textContent=a.map(x=>typeof x==="object"?JSON.stringify(x,null,2):String(x)).join(" ");o.append(s)};
 console.log=(...a)=>w("",a);console.error=(...a)=>w("e",a);window.onerror=(m)=>w("e",["Error: "+m]);<\/script><script>${code.replace(/<\/script/gi,"<\\/script")}<\/script>`;
   }
+  // Catch errors inside the running code so SNOWE can fix them
+  const catcher = `<script>(function(){function s(m){try{parent.postMessage({snoweErr:String(m)},"*")}catch(e){}}addEventListener("error",function(e){var t=e.target;if(t&&t!==window&&(t.src||t.href)){s("Couldn't load "+(t.src||t.href));return}s((e.message||"Error")+(e.lineno?" (line "+e.lineno+")":""))},true);addEventListener("unhandledrejection",function(e){s("Promise error: "+((e.reason&&e.reason.message)||e.reason))})})();<\/script>`;
+  const m = doc.match(/<head[^>]*>/i) || doc.match(/<html[^>]*>/i) || doc.match(/<!doctype[^>]*>/i);
+  doc = m ? doc.slice(0, m.index + m[0].length) + catcher + doc.slice(m.index + m[0].length) : catcher + doc;
+  runErrors = []; lastRunDoc = doc;
+  $("runErr").hidden = true;
   $("runFrame").srcdoc = doc;
   $("runDlg").hidden = false;
 }
+let runErrors = [], lastRunDoc = "";
+addEventListener("message", e => {
+  if (e.source !== $("runFrame").contentWindow || !e.data || !e.data.snoweErr) return;
+  if (runErrors.length < 5 && !runErrors.includes(e.data.snoweErr)) runErrors.push(String(e.data.snoweErr).slice(0, 300));
+  $("runErrText").textContent = "⚠️ " + runErrors[0] + (runErrors.length > 1 ? ` (+${runErrors.length - 1} more)` : "");
+  $("runErr").hidden = false;
+});
+$("fixBtn").onclick = () => {
+  const errs = runErrors.join("\n"); closeDialogs();
+  if (busy) return toast("Wait for SNOWE to finish first");
+  send(`When I run your code I get ${runErrors.length > 1 ? "these errors" : "this error"}:\n${errs}\nPlease fix it and send the FULL fixed code.`);
+};
+$("newTab").onclick = () => {
+  const u = URL.createObjectURL(new Blob([lastRunDoc], {type:"text/html"}));
+  const a = document.createElement("a"); a.href = u; a.target = "_blank"; a.rel = "noopener"; a.click();
+  setTimeout(() => URL.revokeObjectURL(u), 60000);
+};
 
 /* ================= composer ================= */
 const box = $("box");
@@ -514,7 +653,7 @@ document.addEventListener("keydown", e => {
 });
 
 /* ================= dialogs ================= */
-function closeDialogs(){ document.querySelectorAll(".scrim").forEach(s => s.hidden = true); $("runFrame").srcdoc = ""; }
+function closeDialogs(){ document.querySelectorAll(".scrim").forEach(s => s.hidden = true); $("runFrame").srcdoc = ""; $("runErr").hidden = true; }
 document.querySelectorAll(".scrim").forEach(s => {
   s.onclick = e => { if (e.target === s || e.target.closest("[data-close]")) closeDialogs(); };
 });
