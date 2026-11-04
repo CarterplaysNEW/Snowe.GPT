@@ -178,6 +178,7 @@ function renderActivity(el, m, live){
     if (pages) parts.push(`opened ${pages} page${pages > 1 ? "s" : ""}`);
     if (m.sources?.length) parts.push(`${m.sources.length} source${m.sources.length > 1 ? "s" : ""}`);
     if (m.reasoning) parts.push(live && !cleanText(m.content || "", true) ? "thinking…" : "thought it through");
+    if (steps.some(s => /answering instead/.test(s.t))) parts.unshift("switched brains");
     if (!parts.length) parts.push(`${major.length} step${major.length > 1 ? "s" : ""}`);
     sum = parts.join(" · "); sum = sum[0].toUpperCase() + sum.slice(1);
   }
@@ -186,7 +187,7 @@ function renderActivity(el, m, live){
   const head = document.createElement("button");
   head.className = "act-head"; head.dataset.act = "activity"; head.setAttribute("aria-expanded", m.actOpen ? "true" : "false");
   head.innerHTML = `<span class="caret" aria-hidden="true">▸</span><span class="act-ico" aria-hidden="true"></span><span class="act-sum"></span>`;
-  head.querySelector(".act-ico").textContent = (searches || m.sources?.length || searchingNow) ? "🔎" : pages ? "🌐" : "💭";
+  head.querySelector(".act-ico").textContent = (searches || m.sources?.length || searchingNow) ? "🔎" : pages ? "🌐" : steps.some(s => s.i === "⚠️") ? "⚠️" : "💭";
   head.querySelector(".act-sum").textContent = sum;
   box.append(head);
   if (m.actOpen){
@@ -398,9 +399,12 @@ async function generate(c, reply, autoLeft){
       return before + space + g;
     };
     try{
-      const search = (!before && settings.search !== "off") ? (brain().search || "normal") : "off";
-      if (!before){ reply.steps = []; reply.reasoning = ""; reply.sources = null; }
-      finish = await stream(messages, ctl.signal, search, st => {
+      const needsWeb = /https?:\/\//.test(lastUser) || /\b(latest|news|today|tonight|yesterday|current|currently|newest|recent|update|updated|version|price|cost|who is|who's|who won|who was|when is|when does|when did|release|released|weather|score|results?|2025|2026|2027|is .+ (dead|alive|real)|search|look up|google)\b/i.test(lastUser);
+      const chatty = lastUser.trim().split(/\s+/).length <= 3 && !lastUser.includes("?");
+      const skipWeb = !needsWeb && (codey || chatty);
+      const search = (!before && settings.search !== "off" && !skipWeb && !reply.noWeb) ? (brain().search || "normal") : "off";
+      if (!before && !reply.fallbackModel){ reply.steps = []; reply.reasoning = ""; reply.sources = null; }
+      finish = await stream(messages, ctl.signal, search, reply.fallbackModel, st => {
         reply.steps = reply.steps || [];
         if (st.status === "searching"){
           reply.searching = st.depth || "normal";
@@ -428,9 +432,18 @@ async function generate(c, reply, autoLeft){
       if (e?.name === "AbortError"){
         reply.error = "Stopped.";
         if (reply.content) reply.paused = true;
+      } else if (!got && !before && !reply.fallbackModel && /out of breath|speed limit|rate limit/i.test(e?.message || "")
+                 && CFG.BRAINS[CFG.DEFAULT_BRAIN].model !== brain().model){
+        // This brain hit Groq's limit: let Snowman answer instead (no web search, it was probably the cause)
+        const helper = CFG.BRAINS[CFG.DEFAULT_BRAIN];
+        reply.fallbackModel = helper.model; reply.noWeb = true;
+        reply.steps = (reply.steps || []).concat({i:"⚠️", t:`${brain().name} is out of breath (Groq's free limit), so ${helper.name} is answering instead`});
+        reply.searching = null; scheduleRender();
+        continue;
       } else {
         if (!got) refund();
-        reply.error = e?.message && !(e instanceof TypeError) ? `SNOWE's brain said: ${e.message}` : "Can't reach SNOWE's brain. Check your internet and try again.";
+        const msg = String(e?.message || "").replace(/(\d+)\.\d+s/g, "$1s").replace(/\.\.$/, ".");
+        reply.error = msg && !(e instanceof TypeError) ? (/out of breath/i.test(msg) ? msg : `SNOWE's brain said: ${msg}`) : "Can't reach SNOWE's brain. Check your internet and try again.";
         if (reply.content) reply.paused = true;
       }
       return done(c);
@@ -449,7 +462,7 @@ function done(c){
   setBusy(false); ctl = null;
   const r = liveMsg; liveEl = null; liveMsg = null;
   if (r){
-    r.thinking = false; r.searching = null;
+    r.thinking = false; r.searching = null; delete r.fallbackModel; delete r.noWeb;
     if (r.reasoning && r.reasoning.length > 4000) r.reasoning = "…" + r.reasoning.slice(-4000);
     const tags = [...r.content.matchAll(COIN_TAG)];
     if (tags.length){
@@ -465,11 +478,11 @@ function done(c){
 }
 
 // Streams one answer from the Worker. Returns the finish reason ("stop", "length", ...).
-async function stream(messages, signal, search, onStatus, onDelta, onThinking){
+async function stream(messages, signal, search, modelOverride, onStatus, onDelta, onThinking){
   const res = await fetch(CFG.WORKER_URL, {
     method:"POST", signal,
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({model: brain().model, messages, search})
+    body: JSON.stringify({model: modelOverride || brain().model, messages, search})
   });
   if (!res.ok){
     let msg = `error ${res.status}`;
