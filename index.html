@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <div class="app">
@@ -19,7 +19,7 @@
   <header class="top">
     <button class="menu" id="menu" aria-label="Open chats">☰</button>
     <h2 class="title" id="title" title="Double-click to rename">New chat</h2>
-    <div class="ver"><span>SNOWE ver.</span><span>0.5 [BETA]</span></div>
+    <div class="ver"><span>SNOWE ver.</span><span>0.6 [BETA]</span></div>
   </header>
 
   <aside class="side" id="side">
@@ -106,10 +106,11 @@
   <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="abH">
     <h2 id="abH">About <button data-close aria-label="Close">✕</button></h2>
     <div class="in">
-      <p><b>SNOWE.GPT</b> ver. 0.5 [BETA]</p>
+      <p><b>SNOWE.GPT</b> ver. 0.6 [BETA]</p>
       <p>SNOWE is a chatbot that is definitely, 100% made of snow. Do not leave it in the sun.</p>
       <p>Ask him to code something and he writes it live in a code box. When he's done you can copy it, download it, or run it (HTML and JavaScript).</p>
-      <p>SNOWE searches the web when a question needs fresh facts, and shows his sources under the answer.</p>
+      <p>SNOWE searches the web when a question needs fresh facts, and shows his sources under the answer. Paste a link and he opens the website and reads it. Click the ▸ arrow above an answer to see every search, page and thought.</p>
+      <p>Code boxes have ✨ Cooler (SNOWE upgrades the look) and ▶ Run. If the code crashes, press 🔧 Fix with SNOWE.</p>
       <p>Be nice to SNOWE to earn SnowCoins, then spend them in the shop on Avalanche, his smartest brain.</p>
       <p>Commands (free, they don't use messages): <code>/help</code> <code>/coins</code> <code>/shop</code> <code>/buy</code> <code>/brain</code></p>
       <p>Shortcuts: <code>/</code> jumps to the textbox, <kbd>Enter</kbd> sends, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a new line. Double-click the big title to rename a chat.</p>
@@ -120,7 +121,8 @@
 
 <div class="scrim" id="runDlg" hidden>
   <div class="dlg wide" role="dialog" aria-modal="true" aria-labelledby="runH">
-    <h2 id="runH">Running SNOWE's code <button data-close aria-label="Close">✕</button></h2>
+    <h2 id="runH">Running SNOWE's code <span class="run-btns"><button id="newTab" class="btn small" title="Open in a new tab">↗ New tab</button><button data-close aria-label="Close">✕</button></span></h2>
+    <div class="runerr" id="runErr" hidden><span id="runErrText"></span><button id="fixBtn">🔧 Fix with SNOWE</button></div>
     <iframe id="runFrame" title="Code preview" sandbox="allow-scripts allow-modals allow-forms"></iframe>
   </div>
 </div>
@@ -128,7 +130,7 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="config.js"></script>
-<script src="app.js"></script>
+<script src="config.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
